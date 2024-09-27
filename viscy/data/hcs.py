@@ -104,6 +104,8 @@ class SlidingWindowDataset(Dataset):
     :param ChannelMap channels: source and target channel names,
         e.g. ``{'source': 'Phase', 'target': ['Nuclei', 'Membrane']}``
     :param int z_window_size: Z window size of the 2.5D U-Net, 1 for 2D
+    :param str pyramid_resolution: pyramid level.
+        defaults to 0 (full resolution)
     :param DictTransform | None transform:
         a callable that transforms data, defaults to None
     """
@@ -113,6 +115,7 @@ class SlidingWindowDataset(Dataset):
         positions: list[Position],
         channels: ChannelMap,
         z_window_size: int,
+        pyramid_resolution: str = "0",
         transform: DictTransform | None = None,
     ) -> None:
         super().__init__()
@@ -128,6 +131,7 @@ class SlidingWindowDataset(Dataset):
         )
         self.z_window_size = z_window_size
         self.transform = transform
+        self.pyramid_resolution = pyramid_resolution
         self._get_windows()
 
     def _get_windows(self) -> None:
@@ -138,7 +142,7 @@ class SlidingWindowDataset(Dataset):
         self.window_arrays = []
         self.window_norm_meta: list[NormMeta | None] = []
         for fov in self.positions:
-            img_arr: ImageArray = fov["0"]
+            img_arr: ImageArray = fov[str(self.pyramid_resolution)]
             ts = img_arr.frames
             zs = img_arr.slices - self.z_window_size + 1
             w += ts * zs
@@ -219,7 +223,7 @@ class SlidingWindowDataset(Dataset):
         sample = {
             "index": sample_index,
             "source": self._stack_channels(sample_images, "source"),
-            "norm_meta": norm_meta,
+            # "norm_meta": norm_meta,
         }
         if self.target_ch_idx is not None:
             sample["target"] = self._stack_channels(sample_images, "target")
@@ -301,6 +305,8 @@ class HCSDataModule(LightningDataModule):
     :param Path | None ground_truth_masks: path to the ground truth masks,
         used in the test stage to compute segmentation metrics,
         defaults to None
+    :param str pyramid_resolution: pyramid resolution level.
+        defaults to 0 (full resolution)
     """
 
     def __init__(
@@ -318,6 +324,7 @@ class HCSDataModule(LightningDataModule):
         augmentations: list[MapTransform] = [],
         caching: bool = False,
         ground_truth_masks: Path | None = None,
+        pyramid_resolution: str = "0",
     ):
         super().__init__()
         self.data_path = Path(data_path)
@@ -334,6 +341,7 @@ class HCSDataModule(LightningDataModule):
         self.caching = caching
         self.ground_truth_masks = ground_truth_masks
         self.prepare_data_per_node = True
+        self.pyramid_resolution = pyramid_resolution
 
     @property
     def cache_path(self):
@@ -390,6 +398,7 @@ class HCSDataModule(LightningDataModule):
         return {
             "channels": {"source": self.source_channel},
             "z_window_size": self.z_window_size,
+            "pyramid_resolution": self.pyramid_resolution,
         }
 
     def setup(self, stage: Literal["fit", "validate", "test", "predict"]):
